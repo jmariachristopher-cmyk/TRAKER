@@ -111,10 +111,57 @@ def lookup_ltp(chain_data, strike, opt_type):
 # Sidebar: token + auto-refresh controls
 # ---------------------------------------------------------------------------
 st.sidebar.header("Upstox connection")
+
+with st.sidebar.expander("🔑 Get today's access token", expanded=False):
+    st.caption(
+        "1. Open this in your browser (replace YOUR_API_KEY), log in, then copy "
+        "the `code` value from the address bar after it redirects:"
+    )
+    st.code(
+        "https://api.upstox.com/v2/login/authorization/dialog?"
+        "response_type=code&client_id=YOUR_API_KEY&redirect_uri=https://127.0.0.1",
+        language="text",
+    )
+    api_key = st.text_input("API Key (Client ID)", key="api_key_input")
+    api_secret = st.text_input("API Secret (Client Secret)", type="password", key="api_secret_input")
+    auth_code = st.text_input("Code from the redirected URL", key="auth_code_input")
+    redirect_uri_used = st.text_input("Redirect URI (must match exactly)", value="https://127.0.0.1", key="redirect_uri_input")
+
+    if st.button("Exchange code for access token"):
+        if not (api_key and api_secret and auth_code):
+            st.error("Fill in API Key, API Secret, and the code first.")
+        else:
+            try:
+                resp = requests.post(
+                    "https://api.upstox.com/v2/login/authorization/token",
+                    headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"},
+                    data={
+                        "code": auth_code,
+                        "client_id": api_key,
+                        "client_secret": api_secret,
+                        "redirect_uri": redirect_uri_used,
+                        "grant_type": "authorization_code",
+                    },
+                    timeout=15,
+                )
+                resp.raise_for_status()
+                token_data = resp.json()
+                new_token = token_data.get("access_token")
+                if new_token:
+                    st.session_state["fetched_token"] = new_token
+                    st.success("Access token generated! It's now filled in below.")
+                else:
+                    st.error(f"No access_token in response: {token_data}")
+            except requests.exceptions.HTTPError as e:
+                st.error(f"Upstox rejected the request: {e} — {resp.text}")
+            except Exception as e:
+                st.error(f"Error: {e}")
+
 token = st.sidebar.text_input(
     "Access token (regenerate daily)", type="password",
-    help="Paste today's Upstox access token here. It is NOT saved anywhere -- "
-         "you re-enter it each session/day.",
+    value=st.session_state.get("fetched_token", ""),
+    help="Paste today's Upstox access token here, or generate one above. "
+         "It is NOT saved anywhere -- you re-enter it each session/day.",
 )
 
 auto_refresh_on = st.sidebar.toggle("Auto-refresh", value=False)
